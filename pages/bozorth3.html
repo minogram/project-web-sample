@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bozorth3 지문 정합 알고리듬 탐색기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+KR:wght@400;700&display=swap');
+        body { font-family: 'Noto Sans KR', 'Inter', sans-serif; }
+        .content-section h3 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem; color: #0369a1; } /* sky-700 */
+        .content-section h4 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #0ea5e9; } /* sky-500 */
+        .content-section p { margin-bottom: 1rem; line-height: 1.75; color: #374151; } /* gray-700 */
+        .content-section ul { margin-left: 1.5rem; margin-bottom: 1rem; list-style-type: disc; }
+        .content-section strong { color: #1f2937; } /* gray-800 */
+        .equation { font-family: 'Times New Roman', serif; font-style: italic; color: #1e40af; margin: 0.5rem 0; display: block; text-align: center; font-size:1.1em; }
+        .nav-item { cursor: pointer; }
+        .canvas-container { border: 1px solid #d1d5db; margin-top: 1rem; margin-bottom: 1rem; background-color: #f9fafb; }
+        .interactive-controls label { margin-right: 0.5rem; }
+        .interactive-controls input[type="range"] { margin-left: 0.5rem; margin-right: 0.5rem; }
+        .interactive-controls button { margin-top: 0.5rem; }
+        /* Chosen Palette: Warm Neutrals with Sky Blue Accent */
+        /* Application Structure Plan: Single-page application with a sidebar for navigating through the Bozorth3 algorithm's stages. Each stage will feature textual explanations derived from the report, complemented by interactive diagrams or conceptual visualizations to aid understanding. User flow is sequential through algorithm stages, but allows random access. This structure is chosen for its clarity in presenting a step-by-step process, making complex information digestible. */
+        /* Visualization & Content Choices:
+            - Introduction (서론): Text. Goal: Overview.
+            - Minutiae (제1절): Text + Static conceptual diagram of a minutia (HTML/CSS). Goal: Inform. Interaction: None planned for simplicity, text is key. Justification: Basic understanding of minutiae properties.
+            - Pair Tables (제2절): Text + Interactive Canvas diagram. Goal: Explain pair creation. Interaction: Click on 2 conceptual minutiae, see calculated value names (d_ij, φ_ij, β_1ij, β_2ij). Justification: Illustrate geometric relationships. Method: Canvas.
+            - Compatibility Table (제3절): Text + Interactive conceptual tables. Goal: Explain pair comparison. Interaction: Sliders for Td, Tβ; visual feedback on compatibility of pre-defined pairs. Justification: Demonstrate tolerance impact. Method: HTML + JS.
+            - Graph Matching (제4절): Text + Interactive conceptual graph. Goal: Explain consistency checks. Interaction: Click nodes (pre-defined compatible pairs) to attempt to build path, see score/feedback. Justification: Simulate matching logic. Method: HTML/CSS for graph nodes + JS.
+            - Scoring (제5절): Text + Chart.js ROC/DET curve. Goal: Explain thresholding. Interaction: Slider for threshold on the ROC/DET curve. Justification: Visualize FAR/FRR trade-off. Method: Chart.js.
+            - Summary (요약): Text. Goal: Recap.
+            - CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. */
+    </style>
+</head>
+<body class="bg-stone-100">
+    <div class="flex flex-col md:flex-row min-h-screen">
+        <aside class="w-full md:w-64 bg-neutral-800 text-stone-200 p-6 space-y-2">
+            <h1 class="text-2xl font-bold text-white mb-6">Bozorth3 탐색기</h1>
+            <nav id="navigation" class="space-y-1">
+                <a data-section="intro" class="nav-item block py-2.5 px-4 rounded transition duration-200 hover:bg-sky-500 hover:text-white">서론</a>
+                <a data-section="section1" class="nav-item block py-2.5 px-4 rounded transition duration-200 hover:bg-sky-500 hover:text-white">제1절: 특징점 표현</a>
+                <a data-section="section2" class="nav-item block py-2.5 px-4 rounded transition duration-200 hover:bg-sky-500 hover:text-white">제2절: 쌍 테이블 구축</a>
+                <a data-section="section3" class="nav-item block py-2.5 px-4 rounded transition duration-200 hover:bg-sky-500 hover:text-white">제3절: 비교 테이블 구축</a>
+                <a data-section="section4" class="nav-item block py-2.5 px-4 rounded transition duration-200 hover:bg-sky-500 hover:text-white">제4절: 그래프 매칭</a>
+                <a data-section="section5" class="nav-item block py-2.5 px-4 rounded transition duration-200 hover:bg-sky-500 hover:text-white">제5절: 최종 점수 산출</a>
+                <a data-section="summary" class="nav-item block py-2.5 px-4 rounded transition duration-200 hover:bg-sky-500 hover:text-white">요약</a>
+            </nav>
+        </aside>
+
+        <main class="flex-1 p-6 md:p-10 overflow-y-auto">
+            <div id="content-area" class="bg-white p-6 sm:p-8 rounded-lg shadow-lg">
+                </div>
+        </main>
+    </div>
+
+    <script>
+        const sections = {
+            intro: {
+                title: "Bozorth3 지문 정합 알고리듬에 대한 대화형 학습",
+                content: `
+                    <p>본 애플리케이션은 미국 국립표준기술연구소(NIST)에서 개발된 Bozorth3 지문 정합 알고리듬의 수학적 원리를 이해하는 데 도움을 드리고자 제작되었습니다. Bozorth3는 특징점(minutiae) 기반의 알고리듬으로, 두 지문 이미지가 동일인의 것인지 여부를 판단하기 위해 특징점들의 상대적인 위치와 방향을 비교합니다.</p>
+                    <p>좌측 내비게이션 바를 통해 알고리듬의 각 단계를 순차적으로 또는 선택적으로 탐색할 수 있습니다. 각 절에서는 핵심 개념에 대한 설명과 함께, 이해를 돕기 위한 개념적 다이어그램 및 간단한 상호작용 요소가 제공될 수 있습니다.</p>
+                    <p>Bozorth3는 법 집행 기관에서 대규모 지문 데이터베이스 검색에 널리 사용되며, 회전 및 평행 이동과 같은 변환에 강인한 특성을 지니도록 설계되었습니다. 본 애플리케이션을 통해 이 복잡한 알고리듬의 작동 방식에 대한 깊이 있는 통찰을 얻으시기를 바랍니다.</p>
+                `
+            },
+            section1: {
+                title: "제1절 특징점(Minutiae)의 정규적 표현",
+                content: `
+                    <p>지문 인식 시스템의 근원적인 구성요소는 특징점(Minutiae)으로 정의되며, 이는 지문 표면을 구성하는 융선(ridge) 패턴 상에서 발생하는 국부적인 위상학적 변화 지점을 지칭하는 바이다. 각 개인의 지문은 고유한 융선 유동 패턴을 구비하고 있으며, 이러한 융선이 단절되는 지점(이하, 끝점(ridge ending)이라 칭함) 또는 단일 융선이 두 개의 융선으로 분기되는 지점(이하, 분기점(ridge bifurcation)이라 칭함) 등이 특징점의 전형적인 형태로 귀결된다. Bozorth3 알고리듬을 위시한 대다수의 특징점 기반 정합(matching) 시스템은 상기 기술된 끝점과 분기점을 핵심적 식별자(identifier)로 활용한다. 각각의 특징점 <em>m<sub>i</sub></em>는 당해 지문 내에서 고유한 식별 정보를 내포하며, 신뢰성 있는 정합의 전제 조건으로서 다음과 같은 다차원적 속성들을 통해 정밀한 기술(記述)을 요한다:</p>
+                    <h4>위치 좌표 (<em>x<sub>i</sub>, y<sub>i</sub></em>)</h4>
+                    <p>각각의 특징점이 지문 이미지의 2차원 평면상에 점유하는 좌표를 의미한다. 통상적으로 이미지의 좌상단 또는 좌하단을 원점(0,0)으로 설정하고, 화소(pixel) 단위를 기본 단위로 상정하나, 지문 입력 센서의 해상도(PPI, Pixels Per Inch)를 참작하여 실제 물리적 단위(예컨대, 밀리미터)로 치환하여 운용되기도 한다. 이 좌표는 특징점의 절대적 위치를 명시하며, 이후 전개될 모든 기하학적 연산, 예컨대 특징점 간 거리 산출 또는 상대적 각도 측정 등에 있어 기준점으로서 기능한다. 특징점 위치 정보의 정밀도는 정합 성공률에 직접적인 영향을 미치는바, 만일 위치 정밀도가 미흡하거나 양자화 오류(quantization error)가 과도할 경우, 동일 지문이라 할지라도 스캔 시점 또는 조건에 따라 특징점의 상대적 위치가 미세하게 변동하여 정합 오류를 초래할 개연성이 존재한다. 이러한 이유로, 고해상도 이미지로부터 서브픽셀(sub-pixel) 수준의 정밀도로 특징점 위치를 결정하기 위한 제반의 정밀도 향상 시도가 경주된다.</p>
+                    <div class="my-4 p-4 border rounded-md bg-gray-50 text-center">
+                        <p class="font-semibold">개념적 특징점 표현</p>
+                        <div class="inline-block relative text-left text-sm mt-2">
+                            <div class="w-2 h-2 bg-red-500 rounded-full absolute" style="left: 50%; top: 50%; transform: translate(-50%, -50%);"></div>
+                            <div class="absolute" style="left: calc(50% + 5px); top: calc(50% - 20px);">(<em>x<sub>i</sub>, y<sub>i</sub></em>)</div>
+                            <div class="absolute w-16 h-px bg-blue-500" style="left: calc(50% + 2px); top: 50%; transform-origin: left center; transform: rotate(45deg);"></div>
+                            <div class="absolute" style="left: calc(50% + 40px); top: calc(50% + 20px); transform: rotate(45deg) translateX(5px) translateY(-10px) ;"><em>θ<sub>i</sub></em></div>
+                            <div class="w-40 h-20"></div>
+                             <p class="text-xs text-gray-600 mt-1">위 다이어그램은 특징점의 위치 (<em>x<sub>i</sub>, y<sub>i</sub></em>)와 방향 <em>θ<sub>i</sub></em>를 개념적으로 나타냅니다.</p>
+                        </div>
+                    </div>
+                    <h4>국부 융선 방향 (<em>θ<sub>i</sub></em>)</h4>
+                    <p>특징점이 위치한 지점에서의 국부적 융선 유동의 방향성을 지시하는 각도량이다. 관례적으로 0에서 2π 라디안 (또는 0에서 360도) 범위 내의 값으로 표현되며, x축의 양의 방향을 기준으로 반시계 방향으로 측정하는 것이 일반적으로 간주된다. 예시로서, 끝점의 경우에는 융선이 종결되는 지점에서 융선이 진행하던 방향을 의미하는 바이며, 분기점의 경우에는 세 갈래로 분기되는 융선들 중 지배적인 유동 방향 또는 분기점 자체의 기하학적 중심점에서 정의된 특정 방향성을 지시한다. 이 방향 정보는 지문이 입력 센서 상에서 임의의 각도로 회전하여 입력되더라도 특징점 간의 상대적인 각도 관계를 일정하게 유지시키는 기능을 수행하며, 이는 알고리듬의 회전 불변성(rotation invariance)을 확보하는 데 있어 핵심적인 역할을 수행한다. 국부적인 융선 방향은 다양한 기법을 통해 추정될 수 있다. 대표적인 방법론으로는, 특징점 주변의 미소 영역(small window) 내 화소들의 휘도 변화율(gradient)을 분석하여 지배적인 방향 성분을 추출하거나, 융선 패턴을 직접 추적하는 알고리듬(ridge tracing)을 적용하거나, 또는 지문 전체의 방향장(orientation field)을 우선적으로 산출한 후 해당 특징점 위치에서의 방향값을 참조하는 방식 등이 있다. 지문 이미지에 내재된 노이즈 성분이나 전반적인 품질 저하는 이러한 방향 추정의 정확성을 저해할 수 있는 바, 이는 필연적으로 정합 성능의 감쇠로 귀결될 수 있다.</p>
+                    <h4>특징점 유형 (<em>t<sub>i</sub></em>)</h4>
+                    <p>해당 특징점이 융선의 끝점(ending)인지 혹은 분기점(bifurcation)인지를 명시적으로 지칭하는 정보다. 상기 두 가지 유형이 가장 근원적이고 보편적으로 활용되는 유형이다. 그러나 일부 고도화된 시스템에서는 이 외에도 더욱 다양한 세부 유형을 정의하여 활용하기도 한다. 예컨대, 극히 짧은 독립적 융선 선분인 '점(dot)' 또는 '섬(island)', 두 개의 분기점이 지극히 근접하게 위치하여 미소한 원형 또는 타원형의 폐쇄 공간을 형성하는 '호수(lake)' 또는 '독립된 융선 고리(enclosure)', 두 개의 평행한 융선을 단락적으로 연결하는 '교량(bridge)', 또는 단일 융선으로부터 짧게 돌출된 '가지(spur)' 등이 그것이다. 이러한 비교적 보편성이 낮은 특징점 유형들은 지문에 부가적인 변별력을 제공할 잠재력을 지니고 있으나, 그 추출의 안정성 또는 보편성이 상대적으로 낮아 모든 시스템에서 보편적으로 채택되지는 아니한다. Bozorth3 알고리듬은 주로 위치 및 방향 정보에 집중하는 경향을 보이나, 특징점 유형 정보는 정합 과정에서 부가적인 검증 수단으로 원용될 수 있다. 예를 들어, 두 특징점 쌍이 위치 및 방향 관계의 측면에서는 유사성을 나타낼지라도, 이들을 구성하는 특징점들의 유형이 상이하다면(예컨대, 하나는 끝점-분기점 쌍인데 반해 다른 하나는 끝점-끝점 쌍으로 구성된 경우), 정합 점수를 감점하거나 해당 쌍을 유효 후보군에서 배제하는 방식으로 활용될 수 있다.</p>
+                    <h4>특징점 품질 (<em>q<sub>i</sub></em>)</h4>
+                    <p>해당 특징점이 얼마나 명확하고 신뢰성 있게 추출되었는가를 지시하는 정량적 지표이다. 지문 이미지 자체가 불선명하거나, 특정 영역에 노이즈가 과도하게 분포하거나, 또는 융선 구조가 손상된 경우, 해당 영역에서 추출된 특징점은 그 신뢰도가 저하될 가능성이 있다. 품질 점수는 통상적으로 0과 1 사이의 값으로 정규화되며 (1에 근접할수록 고품질을 의미), 정합 과정에서 중요한 역할을 수행한다. 예를 들어, 품질이 낮은 특징점의 영향을 경감시키기 위하여 정합 점수 산출 시 해당 특징점에 부여되는 가중치를 낮추거나, 혹은 특정 임계값 이하의 품질을 나타내는 특징점은 정합 과정에서 원천적으로 배제할 수도 있다. 반대로, 고품질 특징점들로 구성된 쌍에는 더 높은 가중치를 부여함으로써 전체적인 정합 신뢰도의 제고를 기대할 수 있다. 특징점의 품질은 다양한 요소를 복합적으로 고려하여 평가될 수 있는 바, 예컨대 특징점 주변 융선의 선명도(clarity), 융선의 연속성(continuity), 국부적 이미지의 대비(local contrast), 그리고 해당 특징점이 이미지 경계 영역이나 심한 노이즈 분포 영역으로부터 얼마나 이격되어 있는지 등이 고려될 수 있다. 미국 국립표준기술연구소(NIST)의 NFIQ(NIST Fingerprint Image Quality)와 같은 표준화된 지문 이미지 품질 평가 지표와 연동하여 특징점의 품질을 간접적으로 평가하는 방식을 취하기도 한다.</p>
+                    <p>Bozorth3 알고리듬은 이처럼 다양한 특징점 정보 중에서도 특히 <strong>위치 좌표 (<em>x<sub>i</sub>, y<sub>i</sub></em>)와 국부 융선 방향</strong> <em>θ<sub>i</sub></em> <strong>정보</strong>를 핵심적으로 원용하여 특징점 간의 상대적인 기하학적 관계를 분석한다. 이러한 방법론적 선택은 알고리듬의 연산 효율성을 제고하는 동시에, 지문 입력 시 발생 가능한 평행 이동 및 회전 변환에 대하여 강인한(robust) 정합 성능을 확보하는 데 유리한 측면이 있기 때문이다. 특징점 추출 과정의 정확성 및 신뢰성은 전체 지문 인식 시스템의 성능에 지대한 영향을 미치는 바, 입력 이미지에 대한 적절한 전처리 과정을 통해 이미지 품질을 개선하고, 정교하게 설계된 알고리듬을 적용하여 고품질의 특징점을 안정적으로 추출하는 과정이 매우 긴요하며, 나아가 각 특징점의 공간적 좌표와 방향성뿐 아니라 유형 및 품질까지 아우르는 이와 같은 정밀하고 다면적인 정의는, Bozorth3 정합 패러다임의 핵심을 이루는 복잡한 기하학적 및 관계적 분석을 수행하는 데 있어 필수불가결한, 충분한 차원과 변별력을 갖춘 기초 데이터 집합을 구축하는 기반이 된다.</p>
+                `
+            },
+            section2: {
+                title: "제2절 지문 내 특징점 쌍 테이블의 구축",
+                content: `
+                    <p>단일 지문 이미지로부터 신뢰성이 담보된 특징점 집합(예시: <em>M = {m<sub>1</sub>, m<sub>2</sub>, ..., m<sub>N</sub>}</em>)이 도출된 경우, 후속 단계는 이 특징점들 간의 모든 가능한 유효 쌍(pair)을 고찰하여 그들 사이의 상대적인 기하학적 관계를 상세히 기술(記述)하는 제표(製表)를 구축하는 과정이다. 이 "지문 내 특징점 쌍 테이블"은 입력 지문(probe fingerprint)과 데이터베이스에 저장된 각각의 참조 지문(gallery fingerprint)에 대하여 각각 독립적으로, 그리고 동일한 규범 하에 생성된다. 당해 테이블의 각 행(entry)은 해당 지문 내의 두 특징점 <em>m<sub>i</sub></em>와 <em>m<sub>j</sub></em> 사이의 국소적인 구조적 특징을 표상하는 일종의 특징 벡터(feature vector)로서 구성된다. 이 테이블은 지문의 절대적인 위치나 방향과는 무관하게, 지문 고유의 내재적이고 상대적인 기하 구조를 표현하는 것을 지향한다. 특징점 '쌍'을 기본 분석 단위로 사용하는 이유는, 단일 특징점만으로는 충분한 변별력을 확보하기 어렵고, 세 개 이상의 특징점(예: 삼중항(triplet))을 고려하는 것은 조합의 수가 기하급수적으로 증가하여 연산 복잡성이 과도하게 커지기 때문에, 변별력과 연산 효율성 간의 균형을 도모한 합리적 선택으로 간주된다.</p>
+                    <p>특징점 쌍 (<em>m<sub>i</sub>, m<sub>j</sub></em>) (단, <em>i ≠ j</em>의 조건을 만족)에 대하여 다음과 같은 정량적 값들을 산출하여 해당 제표에 기록한다:</p>
+                    <h4>1. 특징점 간 거리 (<em>d<sub>ij</sub></em>)</h4>
+                    <p>두 특징점 <em>m<sub>i</sub>(x<sub>i</sub>, y<sub>i</sub>)</em>와 <em>m<sub>j</sub>(x<sub>j</sub>, y<sub>j</sub>)</em> 사이의 유클리드 거리(Euclidean distance)로 정의된다.</p>
+                    <span class="equation"><em>d<sub>ij</sub></em> = &radic;((<em>x<sub>i</sub></em> - <em>x<sub>j</sub></em>)<sup>2</sup> + (<em>y<sub>i</sub></em> - <em>y<sub>j</sub></em>)<sup>2</sup>)</span>
+                    <p>모든 가능한 특징점 쌍에 대하여 거리를 산출하는 것이 아니라, 실질적으로 의미 있는 관계를 형성할 개연성이 높고 안정적인 구조 정보를 제공하는 쌍들만을 한정적으로 고려하기 위하여 거리 제한(<em>d<sub>min</sub> < d<sub>ij</sub> < d<sub>max</sub></em>)을 부과한다. 이 거리 제한은 알고리듬의 효율성과 강인성을 제고하는 데 중요한 역할을 수행한다.</p>
+                    <ul>
+                        <li><em>d<sub>min</sub></em>: 이 최소 거리 제한은 과도하게 근접하여 위치하는 특징점 쌍을 배제하기 위한 목적으로 사용된다.</li>
+                        <li><em>d<sub>max</sub></em>: 이 최대 거리 제한은 상호 간에 과도하게 이격된 특징점 쌍을 배제하는 데 활용된다.</li>
+                    </ul>
+                    <div class="my-4 p-4 border rounded-md bg-gray-50">
+                        <p class="font-semibold text-center mb-2">특징점 쌍 테이블 구축 시뮬레이션 (개념적)</p>
+                        <canvas id="minutiaePairCanvas" class="canvas-container mx-auto" width="400" height="250"></canvas>
+                        <div id="pairInfo" class="text-center text-sm text-gray-700 mt-2">캔버스 위의 특징점을 두 개 클릭하여 쌍을 선택하세요.</div>
+                        <p class="text-xs text-gray-600 mt-2 text-center">이 시뮬레이션은 <em>d<sub>ij</sub></em>, <em>&phi;<sub>ij</sub></em>, <em>&beta;<sub>1,ij</sub></em>, <em>&beta;<sub>2,ij</sub></em> 값들이 어떻게 계산되는지 개념적으로 보여줍니다.</p>
+                    </div>
+                    <h4>2. 특징점 연결선의 절대 각도 (<em>&phi;<sub>ij</sub></em>)</h4>
+                    <p>특징점 <em>m<sub>i</sub></em>에서 <em>m<sub>j</sub></em>를 연결하는 가상의 직선 선분이 기준 축(통상적으로 이미지의 x축 양의 방향)과 형성하는 절대 각도로 정의된다.</p>
+                    <span class="equation"><em>&phi;<sub>ij</sub></em> = atan2(<em>y<sub>j</sub></em> - <em>y<sub>i</sub></em>, <em>x<sub>j</sub></em> - <em>x<sub>i</sub></em>)</span>
+                    <p>여기서 atan2(<em>dy, dx</em>) 함수를 사용하는 것이 매우 긴요하다. 이 함수는 <em>dx = x<sub>j</sub> - x<sub>i</sub></em>와 <em>dy = y<sub>j</sub> - y<sub>i</sub></em>의 부호를 모두 고려하여 0에서 2π 범위의 정확한 사분면 각도를 반환한다. 이 <em>&phi;<sub>ij</sub></em> 값은 이후 단계에서 산출될 진정한 회전 불변량인 상대적 방향 각도 <em>&beta;<sub>1,ij</sub></em> = normalize(<em>&theta;<sub>i</sub></em> - <em>&phi;<sub>ij</sub></em>)와 <em>&beta;<sub>2,ij</sub></em> 계산의 직접적인 입력값으로 활용되어, 이들 불변량 산출을 위한 필수적인 기준선으로서의 역할을 수행한다.</p>
+                    <h4>3. 상대적 방향 각도 (<em>&beta;<sub>1,ij</sub></em>, <em>&beta;<sub>2,ij</sub></em>)</h4>
+                    <p>각각의 특징점의 고유 방향(<em>&theta;<sub>i</sub>, &theta;<sub>j</sub></em>)과 두 특징점을 연결하는 직선 선분의 절대 각도(<em>&phi;<sub>ij</sub></em>) 사이의 상대적 각도 편차를 지시한다. 이 값들은 지문이 전체적으로 임의의 각도만큼 회전하더라도 그 값이 변하지 않는 매우 중요한 회전 불변량(rotation invariant)으로 간주된다.</p>
+                    <ul>
+                        <li><em>&beta;<sub>1,ij</sub></em> = normalize(<em>&theta;<sub>i</sub></em> - <em>&phi;<sub>ij</sub></em>)</li>
+                        <li><em>&beta;<sub>2,ij</sub></em> = normalize(<em>&phi;<sub>ji</sub></em> - <em>&theta;<sub>j</sub></em>) 또는 normalize(<em>&theta;<sub>j</sub></em> - <em>&phi;<sub>ij</sub></em>)</li>
+                    </ul>
+                    <p>normalize(&alpha;) 함수는 산출된 각도 &alpha;를 일관된 표준 범위(예컨대, 0에서 2&pi;)로 정규화하는 역할을 수행한다.</p>
+                    <p>상기 기술된 바와 같이 산출된 4개의 값, 즉 특징 벡터 (<em>d<sub>ij</sub>, &beta;<sub>1,ij</sub>, &beta;<sub>2,ij</sub>, &phi;<sub>ij</sub></em>)은 특징점 쌍 (<em>m<sub>i</sub>, m<sub>j</sub></em>)의 고유한 국소적 기하학적 구조를 표상한다. 이 테이블은 후속 단계에서 두 지문 간의 유사성을 비교, 분석하는 데 사용되며, 통상적으로 거리 <em>d<sub>ij</sub></em>를 기준으로 오름차순 정렬되어 비교 과정의 연산 효율성을 제고한다.</p>
+                `
+            },
+            section3: {
+                title: "제3절 지문 간 비교 테이블 구축",
+                content: `
+                    <p>두 개의 상이한 지문, 즉 현재 시스템에 입력된 지문 P(Probe)와 기존 데이터베이스에 저장된 다수의 참조 지문 G(Gallery) 중 어느 하나가 동일인의 것인지 여부를 판별하기 위한 핵심적 단계는, 우선 각 지문에 대하여 독립적으로 구축된 "지문 내 특징점 쌍 테이블" (이하 각각 <em>Table<sub>P</sub></em>와 <em>Table<sub>G</sub></em>로 약칭함)을 상호 면밀히 비교하는 것이다. 이 단계의 궁극적인 목표는 두 테이블로부터 서로 유사한 국소적 구조(즉, 유사한 특징 벡터 값을 나타내는 특징점 쌍)를 보유한 특징점 쌍들의 대응 관계를 식별하고, 이를 "호환성 테이블(Compatibility Table)" 또는 "잠재적 일치 목록(Potential Match List)"의 형태로 구축하는 것이다.</p>
+                    <p><em>Table<sub>P</sub></em>의 <em>k</em>번째 특징점 쌍을 <em>L<sub>P</sub><sup>k</sup></em>, <em>Table<sub>G</sub></em>의 <em>l</em>번째 특징점 쌍을 <em>L<sub>G</sub><sup>l</sup></em>라고 할 때, 이 두 특징점 쌍이 상호 "호환된다(compatible)"고 판정하는 기준은 다음과 같은 일련의 정량적 유사성 검사를 순차적으로 통과해야만 한다:</p>
+                    <h4>1. 특징점 쌍 내부 거리의 유사성</h4>
+                    <span class="equation">|<em>d<sub>P</sub><sup>k</sup></em> - <em>d<sub>G</sub><sup>l</sup></em>| < <em>T<sub>d</sub></em></span>
+                    <p><em>T<sub>d</sub></em>는 거리 차이에 대한 사전에 정의된 허용 오차(tolerance)이다.</p>
+                    <h4>2. 상대적 방향 각도의 유사성</h4>
+                    <span class="equation">|normalize_diff(<em>&beta;<sub>1,P</sub><sup>k</sup></em>, <em>&beta;<sub>1,G</sub><sup>l</sup></em>)| < <em>T<sub>&beta;</sub></em></span>
+                    <span class="equation">|normalize_diff(<em>&beta;<sub>2,P</sub><sup>k</sup></em>, <em>&beta;<sub>2,G</sub><sup>l</sup></em>)| < <em>T<sub>&beta;</sub></em></span>
+                    <p><em>T<sub>&beta;</sub></em>는 각도 차이에 대한 허용 오차이다.</p>
+                    <div class="my-4 p-4 border rounded-md bg-gray-50 interactive-controls">
+                        <p class="font-semibold text-center mb-2">호환성 검사 시뮬레이션 (개념적)</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-4">
+                            <div>
+                                <p><strong>입력 지문 쌍 (L<sub>P</sub>)</strong></p>
+                                <p><em>d<sub>P</sub></em> = <span id="dp_val">50</span>, <em>&beta;<sub>1,P</sub></em> = <span id="b1p_val">1.0</span> rad, <em>&beta;<sub>2,P</sub></em> = <span id="b2p_val">0.5</span> rad</p>
+                            </div>
+                            <div>
+                                <p><strong>참조 지문 쌍 (L<sub>G</sub>)</strong></p>
+                                <p><em>d<sub>G</sub></em> = <span id="dg_val">55</span>, <em>&beta;<sub>1,G</sub></em> = <span id="b1g_val">1.1</span> rad, <em>&beta;<sub>2,G</sub></em> = <span id="b2g_val">0.6</span> rad</p>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="td_slider"><em>T<sub>d</sub></em> (거리 허용 오차): <span id="td_slider_val">10</span></label>
+                            <input type="range" id="td_slider" min="0" max="30" value="10" class="w-full">
+                        </div>
+                        <div>
+                            <label for="tbeta_slider"><em>T<sub>&beta;</sub></em> (각도 허용 오차): <span id="tbeta_slider_val">0.2</span> rad</label>
+                            <input type="range" id="tbeta_slider" min="0" max="1" value="0.2" step="0.01" class="w-full">
+                        </div>
+                        <div id="compatibilityResult" class="text-center font-semibold mt-3 p-2 rounded-md">결과: -</div>
+                        <p class="text-xs text-gray-600 mt-2 text-center">슬라이더를 조절하여 두 쌍이 호환되는지 확인해보세요.</p>
+                    </div>
+                    <h4>3. 연결선 각도 차이의 기록 (전역 회전 일관성 정보 수집)</h4>
+                    <span class="equation"><em>&Delta;&phi;<sub>kl</sub></em> = normalize(<em>&phi;<sub>P</sub><sup>k</sup></em> - <em>&phi;<sub>G</sub><sup>l</sup></em>)</span>
+                    <p>이 <em>&Delta;&phi;<sub>kl</sub></em> 값은 두 지문 간의 전역적인 회전 일관성을 검증하는 데 핵심적인 정보로 활용된다.</p>
+                    <p>상기 기술된 거리 유사성 조건(1번)과 상대적 방향 각도 유사성 조건(2번)을 모두 충족시키는 특징점 쌍의 조합은 "호환되는 쌍"으로 간주된다. 이러한 각각의 호환 쌍에 대하여, 관련 정보들이 호환성 테이블에 하나의 독립된 항목으로서 추가된다.</p>
+                `
+            },
+            section4: {
+                title: "제4절 매칭 그래프 구축 및 경로 탐색",
+                content: `
+                    <p>선행 단계에서 생성된 호환성 테이블은 두 지문 간에 국소적으로 유사한 특징점 쌍들의 목록을 제공한다. 그러나 이러한 국소적 유사성의 존재만으로는 두 지문이 전체적으로 일치한다고 단정하기에는 불충분하다. 따라서 후속 단계의 목표는 이러한 국소적인 유사성들을 상호 유기적으로 연결하고 확장함으로써, 전역적으로 일관된(globally consistent) 정합, 즉 두 지문 전체가 합리적인 기하학적 변환 하에서 잘 정렬될 수 있음을 나타내는 가장 강력하고 신뢰할 수 있는 증거를 탐색하는 것이다. Bozorth3 알고리듬은 이 복잡한 과정을 일종의 그래프 탐색(graph traversal) 또는 클러스터링(clustering) 문제로 정형화하여 해결한다.</p>
+                    <h4>1. 초기 매칭 쌍의 선정 (Seeding the Match / Initialization of Clusters)</h4>
+                    <p>매칭 그래프 탐색 또는 클러스터링 과정은 호환성 테이블 내에서 하나의 "호환되는 쌍"을 선택하는 것으로부터 개시된다. 이 선택된 초기 쌍은 현재 구축하고자 하는 매칭 클러스터의 첫 번째 구성 요소, 즉 "씨앗(seed)" 또는 클러스터의 핵(nucleus)으로서 기능한다.</p>
+                    <h4>2. 경로의 확장 (Path Extension / Cluster Growing)</h4>
+                    <p>선정된 초기 매칭 쌍을 포함하는 현재의 매칭 경로(Current Match List, CML) 또는 클러스터가 존재한다고 가정한다. 새롭게 고려되는 호환 쌍이 CML에 이미 존재하는 모든 매칭 쌍들과 "일관성(consistency)"을 유지해야만 CML에 성공적으로 추가될 수 있다. 일관성은 주로 다음 두 가지 핵심적인 기준으로 엄격하게 판정된다:</p>
+                    <ul>
+                        <li><strong>공유 특징점의 일치성 (Common Minutiae Consistency / Enforcement of One-to-One Mapping)</strong>: 만일 두 매칭이 입력 지문에서 동일한 특징점을 공유한다면, 이 공유된 입력 지문 특징점에 대응되는 참조 지문의 특징점 역시 서로 동일해야만 한다.</li>
+                        <li><strong>회전 변환의 일관성 (Rotational Consistency)</strong>: CML에 포함된 모든 매칭 쌍들은 두 지문 간의 단일하고 유일한 전역 회전 각도를 일관되게 암시해야 한다. 즉, 각 쌍이 암시하는 <em>&Delta;&phi;</em> 값들이 서로 유사해야 한다.</li>
+                    </ul>
+                    <div class="my-4 p-4 border rounded-md bg-gray-50">
+                        <p class="font-semibold text-center mb-2">그래프 경로 탐색 시뮬레이션 (개념적)</p>
+                        <div id="graphNodesContainer" class="flex flex-wrap justify-center gap-4 mb-4">
+                            </div>
+                        <div class="text-center">
+                            <p>선택된 경로: <span id="selectedPath" class="font-mono">-</span></p>
+                            <p>경로 점수: <span id="pathScore">0</span></p>
+                            <p>일관성: <span id="pathConsistency">-</span></p>
+                            <button id="resetPathBtn" class="mt-2 px-4 py-2 bg-sky-500 text-white rounded hover:bg-sky-600">경로 초기화</button>
+                        </div>
+                         <p class="text-xs text-gray-600 mt-2 text-center">개념적 노드(호환 쌍)를 클릭하여 일관된 경로를 만들어보세요. (구현 단순화를 위해, 노드는 사전 정의된 일관성 정보를 가집니다)</p>
+                    </div>
+                    <h4>3. 점수의 누적 (Score Accumulation)</h4>
+                    <p>매칭 경로(CML) 또는 클러스터가 성공적으로 확장될 때마다, 해당 클러스터의 정합 점수가 누적적으로 증가한다. 점수 산정 메커니즘은 클러스터의 규모, 개별 매칭의 강도, 포함된 고유 특징점의 수 등을 고려한다.</p>
+                    <h4>4. 최대 점수 경로의 탐색 (Searching for the Maximum Score Path/Cluster)</h4>
+                    <p>알고리듬은 가능한 모든 경로들을 체계적으로 탐색하여, 그중에서 가장 높은 누적 정합 점수를 나타내는 경로(Overall Match List, OML)를 최종적으로 식별한다. 최종적으로 발견된 OML은 두 지문 간에 가장 신뢰할 수 있는 전역적인 정렬 상태와 그에 대한 구체적인 증거의 집합을 나타낸다.</p>
+                `
+            },
+            section5: {
+                title: "제5절 최종 정합 점수의 산출",
+                content: `
+                    <p>매칭 그래프 탐색 또는 클러스터링 과정을 통하여 최종적으로 식별된, 가장 규모가 크고 가장 높은 수준의 내부 일관성을 나타내는 매칭 클러스터(OML)의 누적 점수가 바로 두 지문 간의 최종 정합 점수(match score)로 결정된다. 이 점수는 두 지문이 상호 얼마나 유사한지를 나타내는 정량적인 지표로서 기능하며, 두 지문이 동일한 생체학적 출처(즉, 동일인)로부터 유래하였을 개연성을 통계적으로 반영한다.</p>
+                    <h4>점수의 해석</h4>
+                    <p>산출된 정합 점수가 높을수록 두 지문이 동일인의 것일 확률이 높다는 것을 의미한다. 이 점수는 단순히 정합된 특징점 쌍의 개수만을 단편적으로 반영하는 것이 아니라, 해당 쌍들을 구성하는 개별 특징점들의 품질, 각 쌍의 국소적 기하학적 유사성, 그리고 이들이 연합하여 형성하는 클러스터의 전역적인 구조적 일관성 등을 종합적으로 고려하여 산출된 결과이다.</p>
+                    <h4>임계값(Threshold)과의 비교를 통한 판정</h4>
+                    <p>산출된 최종 정합 점수는 시스템 운영자 또는 설계자가 사전에 설정한 특정 임계값(threshold)과 비교된다. 이 비교 결과를 바탕으로 두 지문에 대한 최종적인 "일치(match)" 또는 "불일치(non-match)" 판정이 내려진다.</p>
+                    <ul>
+                        <li>만일 산출된 점수가 미리 정의된 임계값보다 높거나 같은 경우 (Score &ge; Threshold), 두 지문은 "일치"하는 것으로, 즉 동일인의 지문으로 판정된다.</li>
+                        <li>만일 산출된 점수가 임계값보다 낮은 경우 (Score < Threshold), 두 지문은 "불일치"하는 것으로, 즉 서로 다른 사람의 지문으로 판정된다.</li>
+                    </ul>
+                    <div class="my-4 p-4 border rounded-md bg-gray-50">
+                        <p class="font-semibold text-center mb-2">FAR/FRR 곡선 및 임계값 (개념적)</p>
+                        <div class="chart-container mx-auto w-full max-w-xl h-96 max-h-[400px] md:h-[40vh]">
+                             <canvas id="rocCurveCanvas"></canvas>
+                        </div>
+                        <div class="mt-4 text-center interactive-controls">
+                            <label for="thresholdSlider">임계값 조정: <span id="thresholdValue">50</span></label>
+                            <input type="range" id="thresholdSlider" min="0" max="100" value="50" class="w-1/2">
+                            <p class="text-sm">FAR: <span id="farValue">-</span>, FRR: <span id="frrValue">-</span></p>
+                        </div>
+                        <p class="text-xs text-gray-600 mt-2 text-center">임계값 슬라이더를 움직여 FAR과 FRR의 변화를 관찰하세요. (곡선은 예시입니다)</p>
+                    </div>
+                    <h4>임계값 설정의 중요성 및 파급 효과</h4>
+                    <p>임계값은 지문 인식 시스템의 보안 요구 수준과 사용자 편의성 간의 미묘한 균형을 조정하는 데 있어 매우 중요한 역할을 수행한다. 임계값의 설정은 오인식률(False Acceptance Rate, FAR)과 오거부율(False Rejection Rate, FRR)에 직접적인 영향을 미친다. FAR과 FRR은 일반적으로 상호 역상관 관계(trade-off)에 놓여 있다.</p>
+                    <h4>점수 정규화 (Score Normalization)의 적용 (선택적 고려 사항)</h4>
+                    <p>경우에 따라서는 산출된 원시 정합 점수(raw match score)를 직접 사용하지 않고, 추가적인 정규화(normalization) 과정을 거쳐 보정된 점수를 사용하기도 한다. 이는 서로 다른 크기나 특징점 밀도를 가진 지문들을 상호 비교할 때 발생할 수 있는 점수의 편향을 경감시키는 데 기여할 수 있다.</p>
+                    <p>궁극적으로, Bozorth3 알고리듬에 의해 산출되는 최종 정합 점수는 두 지문 특징점 집합 간에 존재하는 가장 강력하고 일관된 구조적 유사성의 정도를 정량적으로 나타내며, 이는 통계적으로 유의미한 방식으로 두 지문의 동일성 여부를 판정하는 객관적인 근거를 제공한다.</p>
+                `
+            },
+            summary: {
+                title: "요약",
+                content: `
+                    <p>Bozorth3 지문 정합 알고리듬의 수학적 핵심 원리는, 지문을 구성하는 특징점들 간의 상대적인 기하학적 관계를 정밀하게 분석하고, 이를 기반으로 두 지문 간의 전역적인 구조적 일치성을 탐색하여 정량화하는 고도로 정교화된 과정으로 요약될 수 있다. 이 알고리듬의 각 구성 단계는 다음과 같은 핵심적인 수학적 및 논리적 원리를 기반으로 전개된다:</p>
+                    <ol class="list-decimal ml-6 space-y-2">
+                        <li><strong>국소적 구조의 기술 (Local Structure Description)</strong>: 각 지문 내 특징점 쌍들의 상대적 거리(<em>d<sub>ij</sub></em>), 상대 방향 각도(<em>&beta;<sub>1,ij</sub>, &beta;<sub>2,ij</sub></em>), 연결선 절대 각도(<em>&phi;<sub>ij</sub></em>)를 계산하여 회전/이동 불변 특징 벡터를 생성하고 "지문 내 특징점 쌍 테이블"을 구축한다.</li>
+                        <li><strong>국소적 유사성의 측정 (Local Similarity Measurement)</strong>: 두 지문의 쌍 테이블을 비교하여, 거리와 상대 방향 각도가 유사한 호환 쌍들을 식별하고, 각 쌍에 대한 잠재적 전역 회전 각도(<em>&Delta;&phi;</em>) 정보와 함께 "호환성 테이블"을 구성한다.</li>
+                        <li><strong>전역적 일관성의 검증 및 클러스터링 (Global Consistency Verification and Clustering)</strong>: 호환성 테이블의 국소적 매칭 후보들을 대상으로, 공통된 <em>&Delta;&phi;</em> 값을 중심으로 군집을 형성하고(회전 일관성), 특징점들이 모순 없이 일대일로 대응되는지(공유 특징점 일치성) 확인하여 가장 신뢰성 있는 매칭 클러스터를 형성한다.</li>
+                        <li><strong>점수화 (Scoring)</strong>: 가장 강력한 매칭 클러스터의 특성(크기, 누적 유사도 등)을 기반으로 최종 정합 점수를 산출하고, 이를 임계값과 비교하여 일치/불일치 판정을 내린다.</li>
+                    </ol>
+                    <p>이러한 단계별 접근 방식은 특징점의 절대적인 좌표값이나 방향값 그 자체보다는 특징점들 간의 <strong>상대적인 기하학적 관계</strong>에 분석의 초점을 맞추기 때문에, 지문 이미지가 입력될 때 발생할 수 있는 회전 및 평행 이동에 대하여 매우 강인한 정합 성능을 나타낸다. 또한, 국소적인 피부 변형에 대해서도 일정 수준의 허용 오차를 통해 유연하게 대응할 수 있으며, 특히 <em>&Delta;&phi;</em>를 활용한 전역 회전 일관성 검증 메커니즘은 다양한 각도로 입력되는 지문에 효과적으로 대처할 수 있는 능력을 부여한다. Bozorth3 알고리듬은 이러한 수학적 원리의 내재적 견고함과 실증적 성능 덕분에 수십 년에 걸쳐 법 집행 기관을 비롯한 다양한 분야에서 높은 신뢰를 받는 표준적인 지문 정합 알고리듬의 하나로 확고히 자리매김하여 왔다.</p>
+                `
+            }
+        };
+
+        const contentArea = document.getElementById('content-area');
+        const navigationLinks = document.querySelectorAll('#navigation .nav-item');
+        let currentActiveLink = null;
+        let minutiaePairCanvas, minutiaePairCtx;
+        let selectedMinutiae = [];
+        const canvasMinutiae = [ // Conceptual minutiae points for canvas
+            { id: 1, x: 50, y: 50, theta: Math.PI / 4 },
+            { id: 2, x: 150, y: 80, theta: Math.PI / 2 },
+            { id: 3, x: 100, y: 150, theta: Math.PI },
+            { id: 4, x: 250, y: 120, theta: 0 },
+            { id: 5, x: 300, y: 200, theta: 3 * Math.PI / 2 }
+        ];
+
+        let compatibilityTdSlider, compatibilityTbetaSlider, compatibilityResultDiv;
+        let predefinedPairP = { d: 50, b1: 1.0, b2: 0.5 };
+        let predefinedPairG = { d: 55, b1: 1.1, b2: 0.6 };
+
+        let graphNodes = [ // id, text, data (conceptual consistency info)
+            { id: 'nodeA', text: '쌍 A (ΔΦ≈30°)', consistentWith: ['nodeB', 'nodeD'], score: 10, deltaPhiBin: 1 },
+            { id: 'nodeB', text: '쌍 B (ΔΦ≈30°)', consistentWith: ['nodeA', 'nodeD'], score: 12, deltaPhiBin: 1 },
+            { id: 'nodeC', text: '쌍 C (ΔΦ≈90°)', consistentWith: [], score: 8, deltaPhiBin: 2 },
+            { id: 'nodeD', text: '쌍 D (ΔΦ≈30°)', consistentWith: ['nodeA', 'nodeB'], score: 15, deltaPhiBin: 1 },
+            { id: 'nodeE', text: '쌍 E (ΔΦ≈35°)', consistentWith: [], score: 9, deltaPhiBin: 1 }
+        ];
+        let currentGraphPath = [];
+        let currentGraphScore = 0;
+        let currentGraphDeltaPhiBin = null;
+
+        let rocChart = null;
+        let thresholdSlider, thresholdValueSpan, farValueSpan, frrValueSpan;
+
+        function loadSection(sectionId) {
+            if (!sections[sectionId]) {
+                console.error("Section not found:", sectionId);
+                return;
+            }
+            const section = sections[sectionId];
+            contentArea.innerHTML = `<h3>${section.title}</h3>${section.content}`;
+
+            if (currentActiveLink) {
+                currentActiveLink.classList.remove('bg-sky-600', 'text-white');
+            }
+            const newActiveLink = document.querySelector(`#navigation .nav-item[data-section="${sectionId}"]`);
+            if (newActiveLink) {
+                newActiveLink.classList.add('bg-sky-600', 'text-white');
+                currentActiveLink = newActiveLink;
+            }
+
+            // Initialize interactive elements for specific sections
+            if (sectionId === 'section2') {
+                initMinutiaePairCanvas();
+            } else if (sectionId === 'section3') {
+                initCompatibilityTest();
+            } else if (sectionId === 'section4') {
+                initGraphNodes();
+            } else if (sectionId === 'section5') {
+                initRocCurveCanvas();
+            }
+        }
+
+        function initMinutiaePairCanvas() {
+            minutiaePairCanvas = document.getElementById('minutiaePairCanvas');
+            if (!minutiaePairCanvas) return;
+            minutiaePairCtx = minutiaePairCanvas.getContext('2d');
+            selectedMinutiae = [];
+            drawMinutiaeOnCanvas();
+
+            minutiaePairCanvas.addEventListener('click', function(event) {
+                const rect = minutiaePairCanvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+
+                let clickedMinutia = null;
+                for (const m of canvasMinutiae) {
+                    const dist = Math.sqrt((x - m.x)**2 + (y - m.y)**2);
+                    if (dist < 6) { // Click radius
+                        clickedMinutia = m;
+                        break;
+                    }
+                }
+
+                if (clickedMinutia) {
+                    if (selectedMinutiae.find(sm => sm.id === clickedMinutia.id)) return; // Already selected
+
+                    selectedMinutiae.push(clickedMinutia);
+                    drawMinutiaeOnCanvas(); // Redraw to highlight selected
+
+                    if (selectedMinutiae.length === 2) {
+                        const m1 = selectedMinutiae[0];
+                        const m2 = selectedMinutiae[1];
+                        // Conceptual calculation display
+                        const dx = m2.x - m1.x;
+                        const dy = m2.y - m1.y;
+                        const d_ij = Math.sqrt(dx**2 + dy**2).toFixed(2);
+                        const phi_ij = Math.atan2(dy, dx);
+                        const beta1_ij = (m1.theta - phi_ij) % (2 * Math.PI); // Simplified
+                        const beta2_ij = (m2.theta - phi_ij) % (2 * Math.PI); // Simplified
+
+                        document.getElementById('pairInfo').innerHTML =
+                            `선택된 쌍: M${m1.id} - M${m2.id}<br>
+                             <em>d<sub>ij</sub></em> &approx; ${d_ij},
+                             <em>&phi;<sub>ij</sub></em> &approx; ${phi_ij.toFixed(2)} rad<br>
+                             <em>&beta;<sub>1,ij</sub></em> &approx; ${beta1_ij.toFixed(2)} rad,
+                             <em>&beta;<sub>2,ij</sub></em> &approx; ${beta2_ij.toFixed(2)} rad`;
+                    } else if (selectedMinutiae.length > 2) {
+                        selectedMinutiae = [clickedMinutia]; // Start new selection
+                        document.getElementById('pairInfo').innerText = "캔버스 위의 특징점을 두 개 클릭하여 쌍을 선택하세요.";
+                        drawMinutiaeOnCanvas();
+                    }
+                }
+            });
+        }
+
+        function drawMinutiaeOnCanvas() {
+            if (!minutiaePairCtx) return;
+            minutiaePairCtx.clearRect(0, 0, minutiaePairCanvas.width, minutiaePairCanvas.height);
+            minutiaePairCtx.font = "10px Arial";
+
+            canvasMinutiae.forEach(m => {
+                minutiaePairCtx.beginPath();
+                minutiaePairCtx.arc(m.x, m.y, 5, 0, 2 * Math.PI);
+                const isSelected = selectedMinutiae.find(sm => sm.id === m.id);
+                minutiaePairCtx.fillStyle = isSelected ? '#ef4444' : '#3b82f6'; // red-500 if selected, blue-500 otherwise
+                minutiaePairCtx.fill();
+                minutiaePairCtx.fillStyle = 'black';
+                minutiaePairCtx.fillText(`M${m.id}`, m.x + 7, m.y + 3);
+
+                // Draw direction vector (conceptual)
+                const len = 15;
+                minutiaePairCtx.beginPath();
+                minutiaePairCtx.moveTo(m.x, m.y);
+                minutiaePairCtx.lineTo(m.x + len * Math.cos(m.theta), m.y + len * Math.sin(m.theta));
+                minutiaePairCtx.strokeStyle = '#60a5fa'; // blue-400
+                minutiaePairCtx.lineWidth = 1;
+                minutiaePairCtx.stroke();
+            });
+
+            if (selectedMinutiae.length === 2) {
+                minutiaePairCtx.beginPath();
+                minutiaePairCtx.moveTo(selectedMinutiae[0].x, selectedMinutiae[0].y);
+                minutiaePairCtx.lineTo(selectedMinutiae[1].x, selectedMinutiae[1].y);
+                minutiaePairCtx.strokeStyle = '#10b981'; // emerald-500
+                minutiaePairCtx.lineWidth = 2;
+                minutiaePairCtx.stroke();
+            }
+        }
+
+        function initCompatibilityTest() {
+            compatibilityTdSlider = document.getElementById('td_slider');
+            compatibilityTbetaSlider = document.getElementById('tbeta_slider');
+            compatibilityResultDiv = document.getElementById('compatibilityResult');
+
+            document.getElementById('dp_val').innerText = predefinedPairP.d;
+            document.getElementById('b1p_val').innerText = predefinedPairP.b1.toFixed(1);
+            document.getElementById('b2p_val').innerText = predefinedPairP.b2.toFixed(1);
+            document.getElementById('dg_val').innerText = predefinedPairG.d;
+            document.getElementById('b1g_val').innerText = predefinedPairG.b1.toFixed(1);
+            document.getElementById('b2g_val').innerText = predefinedPairG.b2.toFixed(1);
+
+
+            function checkCompatibility() {
+                const Td = parseFloat(compatibilityTdSlider.value);
+                const Tbeta = parseFloat(compatibilityTbetaSlider.value);
+                document.getElementById('td_slider_val').innerText = Td;
+                document.getElementById('tbeta_slider_val').innerText = Tbeta.toFixed(2);
+
+                const distDiff = Math.abs(predefinedPairP.d - predefinedPairG.d);
+                // Note: normalize_diff for angles is more complex, this is simplified
+                const beta1Diff = Math.abs(predefinedPairP.b1 - predefinedPairG.b1);
+                const beta2Diff = Math.abs(predefinedPairP.b2 - predefinedPairG.b2);
+
+                if (distDiff < Td && beta1Diff < Tbeta && beta2Diff < Tbeta) {
+                    compatibilityResultDiv.innerText = "결과: 호환됨 (Compatible)";
+                    compatibilityResultDiv.className = "text-center font-semibold mt-3 p-2 rounded-md bg-green-200 text-green-800";
+                } else {
+                    compatibilityResultDiv.innerText = "결과: 호환되지 않음 (Not Compatible)";
+                    compatibilityResultDiv.className = "text-center font-semibold mt-3 p-2 rounded-md bg-red-200 text-red-800";
+                }
+            }
+            compatibilityTdSlider.addEventListener('input', checkCompatibility);
+            compatibilityTbetaSlider.addEventListener('input', checkCompatibility);
+            checkCompatibility(); // Initial check
+        }
+
+        function initGraphNodes() {
+            const container = document.getElementById('graphNodesContainer');
+            container.innerHTML = ''; // Clear previous nodes
+            currentGraphPath = [];
+            currentGraphScore = 0;
+            currentGraphDeltaPhiBin = null;
+            updateGraphPathDisplay();
+
+            graphNodes.forEach(nodeInfo => {
+                const nodeEl = document.createElement('button');
+                nodeEl.id = nodeInfo.id;
+                nodeEl.textContent = nodeInfo.text;
+                nodeEl.className = 'px-3 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm';
+                nodeEl.addEventListener('click', () => handleGraphNodeClick(nodeInfo));
+                container.appendChild(nodeEl);
+            });
+
+            document.getElementById('resetPathBtn').addEventListener('click', () => {
+                 currentGraphPath = [];
+                 currentGraphScore = 0;
+                 currentGraphDeltaPhiBin = null;
+                 updateGraphPathDisplay();
+                 document.querySelectorAll('#graphNodesContainer button').forEach(btn => {
+                    btn.classList.remove('bg-green-500', 'hover:bg-green-600', 'opacity-50', 'cursor-not-allowed');
+                    btn.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                    btn.disabled = false;
+                 });
+            });
+        }
+
+        function handleGraphNodeClick(nodeInfo) {
+            const nodeEl = document.getElementById(nodeInfo.id);
+            if (currentGraphPath.find(n => n.id === nodeInfo.id)) return; // Already in path
+
+            let isConsistent = true;
+            if (currentGraphPath.length > 0) {
+                // Simplified consistency: check if current node's deltaPhiBin matches the path's deltaPhiBin
+                // And if it's in the 'consistentWith' list of the last node in path (conceptual)
+                const lastNodeInPath = currentGraphPath[currentGraphPath.length-1];
+                if (nodeInfo.deltaPhiBin !== currentGraphDeltaPhiBin || !lastNodeInPath.consistentWith.includes(nodeInfo.id)) {
+                    isConsistent = false;
+                }
+            } else {
+                 currentGraphDeltaPhiBin = nodeInfo.deltaPhiBin; // Set for the first node
+            }
+
+            if (isConsistent) {
+                currentGraphPath.push(nodeInfo);
+                currentGraphScore += nodeInfo.score;
+                nodeEl.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                nodeEl.classList.add('bg-green-500', 'hover:bg-green-600');
+                nodeEl.disabled = true;
+            } else {
+                // Indicate inconsistency, perhaps flash red or provide a message
+                nodeEl.classList.add('bg-red-500');
+                setTimeout(() => nodeEl.classList.remove('bg-red-500'), 500);
+            }
+            updateGraphPathDisplay(isConsistent);
+        }
+
+        function updateGraphPathDisplay(isConsistent = true) {
+            document.getElementById('selectedPath').textContent = currentGraphPath.map(n => n.id.replace('node','')).join(' → ') || '-';
+            document.getElementById('pathScore').textContent = currentGraphScore;
+            let consistencyText = '-';
+            if (currentGraphPath.length > 0) {
+                 consistencyText = isConsistent ? '일관됨 (ΔΦ bin: ' + currentGraphDeltaPhiBin + ')' : '일관되지 않음!';
+            }
+            document.getElementById('pathConsistency').textContent = consistencyText;
+        }
+
+
+        function initRocCurveCanvas() {
+            const ctx = document.getElementById('rocCurveCanvas').getContext('2d');
+            thresholdSlider = document.getElementById('thresholdSlider');
+            thresholdValueSpan = document.getElementById('thresholdValue');
+            farValueSpan = document.getElementById('farValue');
+            frrValueSpan = document.getElementById('frrValue');
+
+            // Sample data for FAR and FRR curves (conceptual)
+            // X-axis is threshold, Y-axis is error rate
+            const thresholds = Array.from({length: 101}, (_, i) => i); // 0 to 100
+            const farData = thresholds.map(t => 0.5 * Math.exp(-t / 20) + Math.random() * 0.05); // Decreasing
+            const frrData = thresholds.map(t => 0.02 + 0.6 * (1 - Math.exp(- (100-t) / 25)) + Math.random() * 0.05); // Increasing
+
+            if (rocChart) {
+                rocChart.destroy();
+            }
+
+            rocChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: thresholds,
+                    datasets: [
+                        {
+                            label: 'FAR (오인식률)',
+                            data: farData,
+                            borderColor: 'rgb(239, 68, 68)', // red-500
+                            tension: 0.1,
+                            fill: false
+                        },
+                        {
+                            label: 'FRR (오거부율)',
+                            data: frrData,
+                            borderColor: 'rgb(59, 130, 246)', // blue-500
+                            tension: 0.1,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: '임계값 (Threshold)' } },
+                        y: { title: { display: true, text: '오류율 (Error Rate)' }, min: 0, max: 1 }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    return '임계값: ' + tooltipItems[0].label;
+                                }
+                            }
+                        },
+                        legend: {
+                            labels: {
+                                 // Chart.js v3+ uses 'boxWidth', 'padding', etc. for legend items.
+                                 // For label wrapping, it's more about axis tick labels.
+                                font: { size: 12 }
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                     // Axis label wrapping is handled by Chart.js automatically or via tick callback.
+                     // Forcing 16-char logic here if needed for specific long labels.
+                }
+            });
+
+            function updateAnnotationLine() {
+                const threshold = parseInt(thresholdSlider.value);
+                thresholdValueSpan.textContent = threshold;
+
+                // Update FAR/FRR display based on current threshold
+                // Find closest data point or interpolate
+                const far = farData[threshold]; // Simplified: direct lookup
+                const frr = frrData[threshold]; // Simplified: direct lookup
+                farValueSpan.textContent = far.toFixed(3);
+                frrValueSpan.textContent = frr.toFixed(3);
+
+                // Update annotation line on chart
+                if (rocChart.options.plugins.annotation) {
+                     rocChart.options.plugins.annotation.annotations.thresholdLine.value = threshold;
+                } else {
+                     rocChart.options.plugins.annotation = {
+                        annotations: {
+                            thresholdLine: {
+                                type: 'line',
+                                scaleID: 'x',
+                                value: threshold,
+                                borderColor: 'rgb(255, 99, 132)',
+                                borderWidth: 2,
+                                label: {
+                                    enabled: true,
+                                    content: '현재 임계값',
+                                    position: 'start'
+                                }
+                            }
+                        }
+                    };
+                }
+                rocChart.update();
+            }
+
+            thresholdSlider.addEventListener('input', updateAnnotationLine);
+            updateAnnotationLine(); // Initial call
+        }
+
+
+        navigationLinks.forEach(link => {
+            link.addEventListener('click', (event) => {
+                event.preventDefault();
+                const sectionId = link.getAttribute('data-section');
+                loadSection(sectionId);
+            });
+        });
+
+        // Load initial section
+        loadSection('intro');
+    </script>
+</body>
+</html>
